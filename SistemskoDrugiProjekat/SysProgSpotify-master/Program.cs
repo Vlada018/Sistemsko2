@@ -20,7 +20,7 @@ namespace SysProg
         static async Task Main(string[] args)
         {
             //kljuc je validan 1h
-            apiService = new ApiService("https://api.spotify.com/v1/search", "BQAUP7yV0nV2YUdmIu0DavHkOJhmSzLFwsUPjwzGJkCM3eKGYx9kFTA2fEnaSPP3XcP9hwPPUfehHQRTpeGD7pTVjU5gNgNjlRVshpaOE8R5Occky2s");
+            apiService = new ApiService("https://api.spotify.com/v1/search", "BQB6WtZnmORGsN70y3-aPkePiBq1wCVr-PEuBjYssYP3ERgcuJDSXFr-964VzaS4P3cJhNcrbR3UJyG59IX0hO1GSrfrspwAt4cGPh2vhYsCwoGsYmc");
 
             string basePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\.."));
             string folderPath = Path.Combine(basePath, "fajlovi");
