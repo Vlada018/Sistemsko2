@@ -1,15 +1,14 @@
-﻿using SysProg.Services;
-using SysProg.Utils;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Net;
 using System.Text;
-using System.Threading;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
-using System.Linq;
-using System.Text.RegularExpressions;
+using SysProg.Services;
+using SysProg.Utils;
 
 namespace SysProg
 {
@@ -19,8 +18,8 @@ namespace SysProg
 
         static async Task Main(string[] args)
         {
-            //kljuc je validan 1h
-            apiService = new ApiService("https://api.spotify.com/v1/search", "BQB6WtZnmORGsN70y3-aPkePiBq1wCVr-PEuBjYssYP3ERgcuJDSXFr-964VzaS4P3cJhNcrbR3UJyG59IX0hO1GSrfrspwAt4cGPh2vhYsCwoGsYmc");
+            // API key is valid for 1 hour
+            apiService = new ApiService("https://api.spotify.com/v1/search", "BQBWyGgXtaKldelYJHLszYGdzs_l0HWzu4yRFWcjTfzgThd2wGPBK9WdQLdDr_E33lLUVYH6lnP0n6ucqxMxIZyPre-Ok0ztE9aBTO29mASaCFXgR0E");
 
             string basePath = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\..\.."));
             string folderPath = Path.Combine(basePath, "fajlovi");
@@ -32,8 +31,15 @@ namespace SysProg
 
             while (true)
             {
-                HttpListenerContext context = await listener.GetContextAsync();
-                _ = Task.Run(() => HandleRequestAsync(context, folderPath));
+                try
+                {
+                    HttpListenerContext context = await listener.GetContextAsync();
+                    _ = Task.Run(() => HandleRequestAsync(context, folderPath));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Listener error: {ex.Message}");
+                }
             }
         }
 
@@ -53,41 +59,52 @@ namespace SysProg
                 if (string.IsNullOrEmpty(queriesParam) || string.IsNullOrEmpty(typesParam))
                 {
                     response.StatusCode = (int)HttpStatusCode.BadRequest;
-                    byte[] errorBytes = Encoding.UTF8.GetBytes("Parametri nisu validni!");
+                    byte[] errorBytes = Encoding.UTF8.GetBytes("Parameters are not valid!");
                     await response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
+                    response.OutputStream.Close();
+                    return;
                 }
-                else
+
+                var queries = new List<string>(queriesParam.Split(',')).Where(q => !string.IsNullOrWhiteSpace(q) && IsValidParameter(q)).ToList();
+                var types = new List<string>(typesParam.Split(',')).Where(t => !string.IsNullOrWhiteSpace(t) && IsValidParameter(t)).ToList();
+
+                if (queries.Count == 0 || types.Count == 0)
                 {
-                    var queries = new List<string>(queriesParam.Split(',')).Where(q => !string.IsNullOrWhiteSpace(q) && IsValidParameter(q)).ToList();
-                    var types = new List<string>(typesParam.Split(',')).Where(t => !string.IsNullOrWhiteSpace(t) && IsValidParameter(t)).ToList();
-
-                    if (queries.Count == 0 || types.Count == 0)
-                    {
-                        response.StatusCode = (int)HttpStatusCode.BadRequest;
-                        byte[] errorBytes = Encoding.UTF8.GetBytes("Parametri nisu validni! Proverite da parametri nisu specijalni znakovi!");
-                        await response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
-                    }
-                    else
-                    {
-                        var results = await apiService.FetchDataForQueriesAsync(queries, types);
-
-                        string resultContent = JArray.FromObject(results).ToString();
-                        byte[] buffer = Encoding.UTF8.GetBytes(resultContent);
-
-                        response.ContentType = "application/json";
-                        response.ContentLength64 = buffer.Length;
-                        await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-
-                        await FileUtil.WriteResultsToFileAsync(folderPath, results, queries, types);
-                    }
+                    response.StatusCode = (int)HttpStatusCode.BadRequest;
+                    byte[] errorBytes = Encoding.UTF8.GetBytes("Parameters are not valid! Check that the parameters are not special characters!");
+                    await response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
+                    response.OutputStream.Close();
+                    return;
                 }
 
+                var results = await apiService.FetchDataForQueriesAsync(queries, types);
+
+                string resultContent = JArray.FromObject(results).ToString();
+                byte[] buffer = Encoding.UTF8.GetBytes(resultContent);
+
+                response.ContentType = "application/json";
+                response.ContentLength64 = buffer.Length;
+                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+
+                await FileUtil.WriteResultsToFileAsync(folderPath, results, queries, types);
                 response.OutputStream.Close();
                 Console.WriteLine("Request processed successfully.");
             }
-            catch (Exception e)
+            catch (HttpRequestException ex)
             {
-                Console.WriteLine($"Error: {e.Message}");
+                Console.WriteLine($"HTTP Request error: {ex.Message}");
+                byte[] errorBytes = Encoding.UTF8.GetBytes("API returned an error!");
+                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                await context.Response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
+                context.Response.OutputStream.Close();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"General error: {ex.Message}");
+                byte[] errorBytes = Encoding.UTF8.GetBytes("An unknown error occurred!");
+                context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                await context.Response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
+                context.Response.OutputStream.Close();
             }
 
             stopwatch.Stop();
